@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>River Flow Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #06090f;
+    --surface:   #0d1420;
+    --border:    #1a2438;
+    --water:     #00c8ff;
+    --water-dim: #0a3d52;
+    --warn:      #ff6b35;
+    --safe:      #00e5a0;
+    --text:      #cdd8ee;
+    --muted:     #4a607a;
+    --font-head: 'Bebas Neue', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+    --font-body: 'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── animated water background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 80%, rgba(0,200,255,.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(0,229,160,.04) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* ── header ── */
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+    animation: fadeDown .6s ease both;
+  }
+  .logo-block h1 {
+    font-family: var(--font-head);
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    letter-spacing: .04em;
+    line-height: 1;
+    color: #fff;
+  }
+  .logo-block h1 span { color: var(--water); }
+  .logo-block p { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: .3rem; }
+
+  .live-badge {
+    display: flex; align-items: center; gap: .5rem;
+    background: rgba(0,229,160,.08);
+    border: 1px solid rgba(0,229,160,.25);
+    border-radius: 2rem;
+    padding: .4rem 1rem;
+    font-family: var(--font-mono);
+    font-size: .75rem;
+    color: var(--safe);
+    white-space: nowrap;
+  }
+  .pulse-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--safe);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  /* ── stat cards row ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.4rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp .5s ease both;
+  }
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--water);
+    opacity: .4;
+    border-radius: 12px 12px 0 0;
+  }
+  .stat-card.warn::after { background: var(--warn); }
+  .stat-card.safe::after { background: var(--safe); }
+
+  .stat-label {
+    font-size: .7rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .6rem;
+  }
+  .stat-value {
+    font-family: var(--font-mono);
+    font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+    font-weight: 500;
+    color: #fff;
+    line-height: 1;
+  }
+  .stat-value .unit {
+    font-size: .75rem;
+    color: var(--muted);
+    margin-left: .25rem;
+  }
+  .stat-sub { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
+
+  /* ── chart panel ── */
+  .chart-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    animation: fadeUp .6s ease .1s both;
+  }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.5rem; flex-wrap: wrap; gap: .5rem;
+  }
+  .panel-title {
+    font-family: var(--font-head);
+    font-size: 1.3rem;
+    letter-spacing: .06em;
+    color: #fff;
+  }
+  .chart-controls { display: flex; gap: .4rem; }
+  .ctrl-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: .3rem .75rem;
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .ctrl-btn.active, .ctrl-btn:hover {
+    border-color: var(--water);
+    color: var(--water);
+    background: rgba(0,200,255,.07);
+  }
+
+  .chart-wrap { position: relative; height: 220px; }
+  canvas#chart { width: 100% !important; height: 100% !important; }
+
+  /* alarm threshold line label */
+  .threshold-label {
+    position: absolute;
+    right: 0;
+    font-family: var(--font-mono);
+    font-size: .65rem;
+    color: var(--warn);
+    opacity: .8;
+  }
+
+  /* ── bottom two-col ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    animation: fadeUp .6s ease .2s both;
+  }
+  @media(max-width:640px){ .two-col { grid-template-columns: 1fr; } }
+
+  .info-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+  }
+  .info-panel .panel-title { font-size: 1.1rem; margin-bottom: 1.1rem; }
+
+  /* log list */
+  .log-list { list-style: none; display: flex; flex-direction: column; gap: .5rem; max-height: 220px; overflow-y: auto; }
+  .log-list::-webkit-scrollbar { width: 4px; }
+  .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .log-item {
+    display: flex; align-items: center; gap: .75rem;
+    font-family: var(--font-mono);
+    font-size: .73rem;
+    padding: .5rem .75rem;
+    background: rgba(255,255,255,.02);
+    border-radius: 8px;
+    border-left: 2px solid var(--border);
+    transition: border-color .3s;
+  }
+  .log-item.alarm { border-left-color: var(--warn); }
+  .log-item.normal { border-left-color: var(--safe); }
+  .log-time { color: var(--muted); flex-shrink: 0; }
+  .log-val { color: #fff; margin-left: auto; }
+
+  /* status indicator */
+  .status-grid { display: flex; flex-direction: column; gap: .75rem; }
+  .status-row {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: .8rem;
+  }
+  .status-key { color: var(--muted); }
+  .status-val { font-family: var(--font-mono); font-size: .78rem; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: .4rem; }
+  .dot.green { background: var(--safe); box-shadow: 0 0 6px var(--safe); }
+  .dot.blue  { background: var(--water); box-shadow: 0 0 6px var(--water); }
+  .dot.warn  { background: var(--warn); }
+
+  /* ── animations ── */
+  @keyframes fadeDown { from { opacity:0; transform:translateY(-14px); } to { opacity:1; transform:none; } }
+  @keyframes fadeUp   { from { opacity:0; transform:translateY(14px);  } to { opacity:1; transform:none; } }
+  @keyframes pulse    { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.4; transform:scale(.7); } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <div class="logo-block">
+      <h1>RIVER <span>FLOW</span> MONITOR</h1>
+      <p>IoT Sensor Network — Soracom + AWS IoT</p>
+    </div>
+    <div class="live-badge"><div class="pulse-dot"></div> LIVE DATA</div>
+  </header>
+
+  <!-- Stat Cards -->
+  <div class="stats-row">
+    <div class="stat-card" id="card-current">
+      <div class="stat-label">Current Flow Rate</div>
+      <div class="stat-value" id="val-current">—<span class="unit">L/min</span></div>
+      <div class="stat-sub" id="sub-current">Awaiting first reading…</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Session Max</div>
+      <div class="stat-value" id="val-max">—<span class="unit">L/min</span></div>
+      <div class="stat-sub" id="sub-max">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Session Avg</div>
+      <div class="stat-value" id="val-avg">—<span class="unit">L/min</span></div>
+      <div class="stat-sub">Last 20 readings</div>
+    </div>
+    <div class="stat-card" id="card-alarm">
+      <div class="stat-label">Alarm Threshold</div>
+      <div class="stat-value">1.0<span class="unit">L/min</span></div>
+      <div class="stat-sub" id="sub-alarm">Status: normal</div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-panel">
+    <div class="panel-header">
+      <div class="panel-title">FLOW RATE HISTORY</div>
+      <div class="chart-controls">
+        <button class="ctrl-btn active" onclick="setWindow(20, this)">20 pts</button>
+        <button class="ctrl-btn" onclick="setWindow(50, this)">50 pts</button>
+        <button class="ctrl-btn" onclick="setWindow(100, this)">100 pts</button>
+        <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">⏸ Pause</button>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Bottom row -->
+  <div class="two-col">
+    <!-- Event Log -->
+    <div class="info-panel">
+      <div class="panel-title">EVENT LOG</div>
+      <ul class="log-list" id="log-list">
+        <li class="log-item"><span class="log-time">--:--:--</span><span>Waiting for data…</span></li>
+      </ul>
+    </div>
+    <!-- System Status -->
+    <div class="info-panel">
+      <div class="panel-title">SYSTEM STATUS</div>
+      <div class="status-grid">
+        <div class="status-row">
+          <span class="status-key">Cellular (Soracom)</span>
+          <span class="status-val"><span class="dot green"></span>Connected</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Soracom Harvest</span>
+          <span class="status-val"><span class="dot green"></span>Streaming</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Soracom Funnel → AWS IoT</span>
+          <span class="status-val"><span class="dot blue"></span>Forwarding</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">CloudWatch Alarm</span>
+          <span class="status-val" id="cw-status"><span class="dot green"></span>OK</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Sensor GPIO Pin</span>
+          <span class="status-val"><span class="dot blue"></span>Pin 7 (GPIO4)</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Sampling Interval</span>
+          <span class="status-val">60 s</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Total Readings</span>
+          <span class="status-val" id="total-readings">0</span>
+        </div>
+        <div class="status-row">
+          <span class="status-key">Uptime</span>
+          <span class="status-val" id="uptime">00:00:00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const ALARM_THRESHOLD = 1.0;
+const INTERVAL_MS     = 2000;   // demo: new reading every 2s (use 60000 for real)
+let allReadings = [];
+let windowSize  = 20;
+let paused      = false;
+let totalCount  = 0;
+let startTime   = Date.now();
+let alarmActive = false;
+
+// ── Chart setup ──────────────────────────────────────────────────────────────
+const ctx = document.getElementById('chart').getContext('2d');
+
+const gradient = ctx.createLinearGradient(0, 0, 0, 220);
+gradient.addColorStop(0,   'rgba(0,200,255,0.35)');
+gradient.addColorStop(1,   'rgba(0,200,255,0.00)');
+
+const chartData = {
+  labels: [],
+  datasets: [{
+    label: 'Flow Rate (L/min)',
+    data: [],
+    borderColor: '#00c8ff',
+    borderWidth: 2,
+    backgroundColor: gradient,
+    fill: true,
+    tension: 0.4,
+    pointRadius: 3,
+    pointBackgroundColor: '#00c8ff',
+    pointBorderWidth: 0,
+  },{
+    label: 'Alarm Threshold',
+    data: [],
+    borderColor: 'rgba(255,107,53,0.6)',
+    borderWidth: 1.5,
+    borderDash: [6,4],
+    backgroundColor: 'transparent',
+    pointRadius: 0,
+    fill: false,
+    tension: 0,
+  }]
+};
+
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: chartData,
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0d1420',
+        borderColor: '#1a2438',
+        borderWidth: 1,
+        titleColor: '#4a607a',
+        bodyColor: '#cdd8ee',
+        titleFont: { family: 'DM Mono', size: 11 },
+        bodyFont:  { family: 'DM Mono', size: 12 },
+        callbacks: {
+          label: ctx => ctx.datasetIndex === 0
+            ? ` ${ctx.parsed.y.toFixed(4)} L/min`
+            : ` Alarm @ ${ALARM_THRESHOLD} L/min`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(26,36,56,.6)', drawBorder: false },
+        ticks: { color: '#4a607a', font: { family: 'DM Mono', size: 10 }, maxTicksLimit: 8 }
+      },
+      y: {
+        min: 0,
+        grid: { color: 'rgba(26,36,56,.6)', drawBorder: false },
+        ticks: { color: '#4a607a', font: { family: 'DM Mono', size: 10 } }
+      }
+    }
+  }
+});
+
+// ── Simulated data (replace with real WebSocket / polling in production) ─────
+function simulateFlowRate() {
+  // Slowly varying sinusoidal with noise + occasional spike
+  const t = totalCount * 0.15;
+  const base  = 0.4 + 0.3 * Math.sin(t);
+  const noise = (Math.random() - 0.5) * 0.15;
+  const spike = Math.random() < 0.04 ? Math.random() * 0.9 : 0;
+  return Math.max(0, +(base + noise + spike).toFixed(4));
+}
+
+function addReading(flowRate) {
+  const now = new Date();
+  const label = now.toTimeString().slice(0,8);
+  totalCount++;
+
+  allReadings.push({ label, value: flowRate, time: now });
+
+  const view = allReadings.slice(-windowSize);
+
+  chartData.labels    = view.map(r => r.label);
+  chartData.datasets[0].data = view.map(r => r.value);
+  chartData.datasets[1].data = view.map(() => ALARM_THRESHOLD);
+  chart.update('none');
+
+  // Stat cards
+  const vals = allReadings.slice(-20).map(r => r.value);
+  const avg  = vals.reduce((a,b) => a+b, 0) / vals.length;
+  const max  = Math.max(...allReadings.map(r => r.value));
+  const maxEntry = allReadings.find(r => r.value === max);
+
+  document.getElementById('val-current').innerHTML = `${flowRate.toFixed(4)}<span class="unit">L/min</span>`;
+  document.getElementById('sub-current').textContent = `Updated ${label}`;
+  document.getElementById('val-max').innerHTML     = `${max.toFixed(4)}<span class="unit">L/min</span>`;
+  document.getElementById('sub-max').textContent   = `at ${maxEntry ? maxEntry.label : '--'}`;
+  document.getElementById('val-avg').innerHTML     = `${avg.toFixed(4)}<span class="unit">L/min</span>`;
+  document.getElementById('total-readings').textContent = totalCount;
+
+  // Alarm state
+  const inAlarm = flowRate >= ALARM_THRESHOLD;
+  if (inAlarm !== alarmActive) {
+    alarmActive = inAlarm;
+    addLog(label, flowRate, inAlarm ? 'alarm' : 'normal',
+           inAlarm ? '⚠ ALARM TRIGGERED' : '✓ Alarm cleared');
+  }
+  addLog(label, flowRate, inAlarm ? 'alarm' : 'normal');
+
+  // Card + CW status coloring
+  const cardCurrent = document.getElementById('card-current');
+  cardCurrent.classList.toggle('warn', inAlarm);
+  cardCurrent.classList.toggle('safe', !inAlarm);
+  document.getElementById('card-alarm').classList.toggle('warn', inAlarm);
+  document.getElementById('sub-alarm').textContent = inAlarm ? '⚠ ALARM ACTIVE' : 'Status: normal';
+  document.getElementById('cw-status').innerHTML = inAlarm
+    ? '<span class="dot warn"></span>ALARM'
+    : '<span class="dot green"></span>OK';
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+const MAX_LOG = 40;
+function addLog(time, val, cls, note) {
+  const list = document.getElementById('log-list');
+  if (list.querySelector('.log-item:first-child span:last-child')?.textContent === 'Waiting for data…') list.innerHTML = '';
+  const li = document.createElement('li');
+  li.className = `log-item ${cls}`;
+  li.innerHTML = `<span class="log-time">${time}</span><span>${note || 'Measurement received'}</span><span class="log-val">${val.toFixed(4)} L/min</span>`;
+  list.prepend(li);
+  while (list.children.length > MAX_LOG) list.removeChild(list.lastChild);
+}
+
+// ── Uptime counter ────────────────────────────────────────────────────────────
+setInterval(() => {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const sc = String(s%60).padStart(2,'0');
+  document.getElementById('uptime').textContent = `${h}:${m}:${sc}`;
+}, 1000);
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function setWindow(n, btn) {
+  windowSize = n;
+  document.querySelectorAll('.ctrl-btn').forEach(b => { if (b !== document.getElementById('btn-pause')) b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+  btn.classList.toggle('active', paused);
+}
+
+// ── Start simulation loop ─────────────────────────────────────────────────────
+setInterval(() => {
+  if (!paused) addReading(simulateFlowRate());
+}, INTERVAL_MS);
+
+// Initial reading immediately
+addReading(simulateFlowRate());
+</script>
+</body>
+</html>
